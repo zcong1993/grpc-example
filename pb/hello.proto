@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "gogoproto/gogo.proto";
+
+package pb;
+
+option go_package = "pb";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+option (gogoproto.goproto_getters_all) = false;
+
+message EchoRequest {
+    string message = 1;
+}
+
+service Hello {
+    rpc Echo(EchoRequest) returns (EchoRequest);
+    rpc Stream(EchoRequest) returns (stream EchoRequest);
+}
