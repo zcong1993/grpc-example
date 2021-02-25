@@ -44,13 +44,12 @@ func (b *Builder) Build(target resolver.Target, cc resolver.ClientConn, opts res
 		target: target,
 		cc:     cc,
 		store:  b.store[target.Endpoint],
-		stopCh: make(chan struct{}),
+		stopCh: make(chan struct{}, 1),
+		rn:     make(chan struct{}, 1),
 	}
 
-	err := r.start(context.Background())
-	if err != nil {
-		return nil, err
-	}
+	go r.start(context.Background())
+	r.ResolveNow(resolver.ResolveNowOptions{})
 
 	return r, nil
 }
@@ -67,13 +66,42 @@ type etcdResolver struct {
 	cc     resolver.ClientConn
 	store  map[string]struct{}
 	stopCh chan struct{}
+	// rn channel is used by ResolveNow() to force an immediate resolution of the target.
+	rn chan struct{}
 }
 
-func (r *etcdResolver) start(ctx context.Context) error {
+func (r *etcdResolver) start(ctx context.Context) {
 	target := r.target.Endpoint
-	resp, err := r.client.Get(ctx, target+"/", clientv3.WithPrefix())
+
+	w := clientv3.NewWatcher(r.client)
+	rch := w.Watch(ctx, target+"/", clientv3.WithPrefix())
+	for {
+		select {
+		case <-r.rn:
+			r.resolveNow()
+		case <-r.stopCh:
+			w.Close()
+			return
+		case wresp := <-rch:
+			for _, ev := range wresp.Events {
+				switch ev.Type {
+				case mvccpb.PUT:
+					r.store[string(ev.Kv.Value)] = struct{}{}
+				case mvccpb.DELETE:
+					delete(r.store, strings.Replace(string(ev.Kv.Key), target+"/", "", 1))
+				}
+			}
+			r.updateTargetState()
+		}
+	}
+}
+
+func (r *etcdResolver) resolveNow() {
+	target := r.target.Endpoint
+	resp, err := r.client.Get(context.Background(), target+"/", clientv3.WithPrefix())
 	if err != nil {
-		return errors.Wrap(err, "get init endpoints")
+		r.cc.ReportError(errors.Wrap(err, "get init endpoints"))
+		return
 	}
 
 	for _, kv := range resp.Kvs {
@@ -81,30 +109,6 @@ func (r *etcdResolver) start(ctx context.Context) error {
 	}
 
 	r.updateTargetState()
-
-	go func() {
-		w := clientv3.NewWatcher(r.client)
-		rch := w.Watch(ctx, target+"/", clientv3.WithPrefix())
-		for {
-			select {
-			case <-r.stopCh:
-				w.Close()
-				return
-			case wresp := <-rch:
-				for _, ev := range wresp.Events {
-					switch ev.Type {
-					case mvccpb.PUT:
-						r.store[string(ev.Kv.Value)] = struct{}{}
-					case mvccpb.DELETE:
-						delete(r.store, strings.Replace(string(ev.Kv.Key), target+"/", "", 1))
-					}
-				}
-				r.updateTargetState()
-			}
-		}
-	}()
-
-	return nil
 }
 
 func (r *etcdResolver) updateTargetState() {
@@ -122,7 +126,11 @@ func (r *etcdResolver) updateTargetState() {
 //
 // It could be called multiple times concurrently.
 func (r *etcdResolver) ResolveNow(o resolver.ResolveNowOptions) {
+	select {
+	case r.rn <- struct{}{}:
+	default:
 
+	}
 }
 
 // Close closes the resolver.
