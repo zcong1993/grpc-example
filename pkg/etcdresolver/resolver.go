@@ -2,6 +2,8 @@ package etcdresolver
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/api/v3/mvccpb"
@@ -15,12 +17,18 @@ const (
 
 type Builder struct {
 	client *clientv3.Client
+	store  map[string]map[string]struct{}
 }
 
 func NewBuilder(client *clientv3.Client) *Builder {
 	return &Builder{
 		client: client,
+		store:  make(map[string]map[string]struct{}),
 	}
+}
+
+func (b *Builder) DebugStore() {
+	fmt.Printf("store %+v\n", b.store)
 }
 
 // Build creates a new resolver for the given target.
@@ -28,11 +36,14 @@ func NewBuilder(client *clientv3.Client) *Builder {
 // gRPC dial calls Build synchronously, and fails if the returned error is
 // not nil.
 func (b *Builder) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {
+	fmt.Printf("call builder %s\n", target.Endpoint)
+	b.store[target.Endpoint] = make(map[string]struct{})
+
 	r := &etcdResolver{
 		client: b.client,
 		target: target,
 		cc:     cc,
-		store:  make(map[string]map[string]struct{}),
+		store:  b.store[target.Endpoint],
 		stopCh: make(chan struct{}),
 	}
 
@@ -54,7 +65,7 @@ type etcdResolver struct {
 	client *clientv3.Client
 	target resolver.Target
 	cc     resolver.ClientConn
-	store  map[string]map[string]struct{}
+	store  map[string]struct{}
 	stopCh chan struct{}
 }
 
@@ -65,12 +76,8 @@ func (r *etcdResolver) start(ctx context.Context) error {
 		return errors.Wrap(err, "get init endpoints")
 	}
 
-	if _, ok := r.store[target]; !ok {
-		r.store[target] = make(map[string]struct{})
-	}
-
 	for _, kv := range resp.Kvs {
-		r.store[target][string(kv.Value)] = struct{}{}
+		r.store[string(kv.Value)] = struct{}{}
 	}
 
 	r.updateTargetState()
@@ -87,9 +94,9 @@ func (r *etcdResolver) start(ctx context.Context) error {
 				for _, ev := range wresp.Events {
 					switch ev.Type {
 					case mvccpb.PUT:
-						r.store[target][string(ev.Kv.Value)] = struct{}{}
+						r.store[string(ev.Kv.Value)] = struct{}{}
 					case mvccpb.DELETE:
-						delete(r.store[target], string(ev.Kv.Key))
+						delete(r.store, strings.Replace(string(ev.Kv.Key), target+"/", "", 1))
 					}
 				}
 				r.updateTargetState()
@@ -101,13 +108,9 @@ func (r *etcdResolver) start(ctx context.Context) error {
 }
 
 func (r *etcdResolver) updateTargetState() {
-	target := r.target.Endpoint
-	if _, ok := r.store[target]; !ok {
-		return
-	}
-	addrs := make([]resolver.Address, len(r.store[target]))
+	addrs := make([]resolver.Address, len(r.store))
 	i := 0
-	for k := range r.store[target] {
+	for k := range r.store {
 		addrs[i] = resolver.Address{Addr: k}
 		i++
 	}
