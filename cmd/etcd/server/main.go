@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-const service = "test-service"
+const defaultService = "test-service"
 
 type helloService struct {
 	pb.UnimplementedHelloServer
@@ -47,6 +47,7 @@ func (h *helloService) Stream(req *pb.EchoRequest, srv pb.Hello_StreamServer) er
 
 func main() {
 	port := flag.String("port", ":8080", "listen port")
+	service := flag.String("service", defaultService, "service name")
 	flag.Parse()
 
 	client, err := clientv3.New(clientv3.Config{Endpoints: []string{"0.0.0.0:2379"}, DialTimeout: time.Second * 5})
@@ -58,7 +59,7 @@ func main() {
 	defer cancel()
 
 	go func() {
-		err := etcdresolver.Register(ctx, client, service, "localhost"+*port)
+		err := etcdresolver.Register(ctx, client, *service, "localhost"+*port)
 		if err != nil {
 			log.Fatal(err)
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/zcong1993/grpc-example/pkg/etcdresolver"
@@ -18,22 +19,10 @@ import (
 	"google.golang.org/grpc"
 )
 
-const (
-	serviceName = "test-service"
-)
+const defaultService = "test-service"
 
-func main() {
-	stream := flag.Bool("stream", false, "If test stream.")
-	flag.Parse()
-
-	client, err := clientv3.New(clientv3.Config{Endpoints: []string{"0.0.0.0:2379"}, DialTimeout: time.Second * 5})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	resolver.Register(etcdresolver.NewBuilder(client))
-
-	conn, err := grpc.Dial(fmt.Sprintf("%s:///%s", etcdresolver.Scheme, serviceName), grpc.WithBlock(), grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`), grpc.WithInsecure())
+func testService(service string, stream bool) {
+	conn, err := grpc.Dial(fmt.Sprintf("%s:///%s", etcdresolver.Scheme, service), grpc.WithBlock(), grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`), grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
@@ -43,7 +32,7 @@ func main() {
 	i := 1
 
 	for {
-		if !*stream {
+		if !stream {
 			resp, err := c.Echo(context.Background(), &pb.EchoRequest{Message: fmt.Sprintf("test-%d", i)})
 			if err != nil {
 				fmt.Println(err)
@@ -71,5 +60,31 @@ func main() {
 		}
 		i++
 		time.Sleep(time.Second)
+	}
+}
+
+func main() {
+	stream := flag.Bool("stream", false, "If test stream.")
+	service := flag.String("service", defaultService, "service name")
+	flag.Parse()
+
+	client, err := clientv3.New(clientv3.Config{Endpoints: []string{"0.0.0.0:2379"}, DialTimeout: time.Second * 5})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	b := etcdresolver.NewBuilder(client)
+
+	resolver.Register(b)
+
+	tmpArr := strings.Split(*service, ",")
+	for _, s := range tmpArr {
+		s := s
+		go testService(s, *stream)
+	}
+
+	for {
+		time.Sleep(time.Second * 5)
+		b.DebugStore()
 	}
 }
