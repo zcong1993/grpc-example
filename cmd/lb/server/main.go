@@ -8,6 +8,8 @@ import (
 	"net"
 	"time"
 
+	"google.golang.org/grpc/metadata"
+
 	"github.com/zcong1993/grpc-example/pb"
 	"google.golang.org/grpc"
 )
@@ -18,6 +20,13 @@ type helloService struct {
 
 func (h *helloService) Echo(ctx context.Context, req *pb.EchoRequest) (*pb.EchoRequest, error) {
 	fmt.Println(req.Message)
+	metadata.AppendToOutgoingContext(ctx, "test", "111")
+	md := metadata.MD{
+		"aaa": []string{"test"},
+	}
+
+	grpc.SendHeader(ctx, md)
+
 	return req, nil
 }
 

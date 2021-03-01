@@ -8,6 +8,8 @@ import (
 	"log"
 	"time"
 
+	"google.golang.org/grpc/metadata"
+
 	"google.golang.org/grpc/resolver"
 
 	"github.com/zcong1993/grpc-example/pb"
@@ -36,7 +38,9 @@ func main() {
 
 	for {
 		if !*stream {
-			resp, err := c.Echo(context.Background(), &pb.EchoRequest{Message: fmt.Sprintf("test-%d", i)})
+			var md metadata.MD
+			resp, err := c.Echo(context.Background(), &pb.EchoRequest{Message: fmt.Sprintf("test-%d", i)}, grpc.Header(&md))
+			fmt.Printf("%+v\n", md)
 			if err != nil {
 				fmt.Println(err)
 			} else {
