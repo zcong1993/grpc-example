@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/api/v3/mvccpb"
@@ -12,7 +13,8 @@ import (
 )
 
 const (
-	Scheme = "etcd"
+	Scheme      = "etcd"
+	defaultFreq = time.Minute * 30
 )
 
 type Builder struct {
@@ -46,6 +48,7 @@ func (b *Builder) Build(target resolver.Target, cc resolver.ClientConn, opts res
 		store:  b.store[target.Endpoint],
 		stopCh: make(chan struct{}, 1),
 		rn:     make(chan struct{}, 1),
+		t:      time.NewTicker(defaultFreq),
 	}
 
 	go r.start(context.Background())
@@ -68,6 +71,7 @@ type etcdResolver struct {
 	stopCh chan struct{}
 	// rn channel is used by ResolveNow() to force an immediate resolution of the target.
 	rn chan struct{}
+	t  *time.Ticker
 }
 
 func (r *etcdResolver) start(ctx context.Context) {
@@ -79,6 +83,8 @@ func (r *etcdResolver) start(ctx context.Context) {
 		select {
 		case <-r.rn:
 			r.resolveNow()
+		case <-r.t.C:
+			r.ResolveNow(resolver.ResolveNowOptions{})
 		case <-r.stopCh:
 			w.Close()
 			return
@@ -135,5 +141,6 @@ func (r *etcdResolver) ResolveNow(o resolver.ResolveNowOptions) {
 
 // Close closes the resolver.
 func (r *etcdResolver) Close() {
+	r.t.Stop()
 	close(r.stopCh)
 }
