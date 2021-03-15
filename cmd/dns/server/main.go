@@ -52,6 +52,7 @@ func (h *helloService) Stream(req *pb.EchoRequest, srv pb.Hello_StreamServer) er
 
 func main() {
 	port := flag.String("port", ":8080", "listen port")
+	maxConnectionAge := flag.Bool("maxConnectionAge", false, "If set server keepalive MaxConnectionAge.")
 	flag.Parse()
 
 	lis, err := net.Listen("tcp", *port)
@@ -59,12 +60,18 @@ func main() {
 		panic(err)
 	}
 
-	// https://github.com/grpc/grpc/issues/12295
-	// dns resolver 刷新周期非常长, 但是重新连接时会刷新 dns
-	// 所以设置最大连接存活时间来刷新 dns
-	s := grpc.NewServer(grpc.KeepaliveParams(keepalive.ServerParameters{
-		MaxConnectionAge: time.Second * 30,
-	}))
+	opts := make([]grpc.ServerOption, 0)
+
+	if *maxConnectionAge {
+		// https://github.com/grpc/grpc/issues/12295
+		// dns resolver 刷新周期非常长, 但是重新连接时会刷新 dns
+		// 所以设置最大连接存活时间来刷新 dns
+		opts = append(opts, grpc.KeepaliveParams(keepalive.ServerParameters{
+			MaxConnectionAge: time.Second * 30,
+		}))
+	}
+
+	s := grpc.NewServer(opts...)
 	pb.RegisterHelloServer(s, &helloService{})
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
