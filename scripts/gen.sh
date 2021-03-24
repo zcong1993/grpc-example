@@ -11,4 +11,4 @@ rm -rf $OUT_DIR/*.{go,json}
 protoc --gogofast_out=plugins=grpc:. \
     -I=. \
     -I="${GOGOPROTO_PATH}" \
-    pb/*.proto
+    pb/hello.proto

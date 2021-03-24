@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option go_package = "github.com/zcong1993/grpc-example/pb";
+
+message EchoRequest {
+    string message = 1;
+}
+
+service Hello {
+    rpc Echo(EchoRequest) returns (EchoRequest);
+    rpc Stream(EchoRequest) returns (stream EchoRequest);
+}
