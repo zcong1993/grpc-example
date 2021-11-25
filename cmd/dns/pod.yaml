@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: grpc-example-client
+  labels:
+    purpose: test
+spec:
+  containers:
+    - name: test-echo
+      image: zcong/grpc-example:dns
+      imagePullPolicy: IfNotPresent
+      command:
+        - client
+      args:
+#        - "-plain"
+        - "-server"
+        - "headless-grpc-server.default.svc.cluster.local:8080"

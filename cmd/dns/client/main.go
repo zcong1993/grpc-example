@@ -16,9 +16,18 @@ import (
 func main() {
 	stream := flag.Bool("stream", false, "If test stream.")
 	serverAddr := flag.String("server", "localhost:8080", "server addr")
+	plain := flag.Bool("plain", false, "If use plain address")
 	flag.Parse()
 
-	conn, err := grpc.Dial(fmt.Sprintf("dns:///%s", *serverAddr), grpc.WithBlock(), grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`), grpc.WithInsecure())
+	addr := *serverAddr
+
+	if !*plain {
+		addr = fmt.Sprintf("dns:///%s", *serverAddr)
+	}
+
+	log.Println(addr)
+
+	conn, err := grpc.Dial(addr, grpc.WithBlock(), grpc.WithDefaultServiceConfig(`{"loadBalancingPolicy":"round_robin"}`), grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("did not connect: %v", err)
 	}
